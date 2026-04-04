@@ -1,0 +1,56 @@
+import { useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import { toast } from "sonner";
+import logo from "@/assets/logo-nova-acropole.png";
+
+export default function Login() {
+  const navigate = useNavigate();
+  const [user, setUser] = useState("");
+  const [password, setPassword] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  const handleLogin = (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    setTimeout(() => {
+      if (user === "admin" && password === "novaacropole") {
+        localStorage.setItem("na-auth", "true");
+        toast.success("Bem-vindo à Nova Acrópole!");
+        navigate("/");
+      } else {
+        toast.error("Usuário ou senha incorretos.");
+      }
+      setLoading(false);
+    }, 500);
+  };
+
+  return (
+    <div className="flex min-h-screen items-center justify-center bg-background p-4">
+      <Card className="w-full max-w-sm">
+        <CardHeader className="items-center pb-2">
+          <img src={logo} alt="Nova Acrópole" className="mb-2 h-24 w-auto" />
+          <p className="text-sm text-muted-foreground">Gestão de Estoque & PDV</p>
+        </CardHeader>
+        <CardContent>
+          <form onSubmit={handleLogin} className="space-y-4">
+            <div>
+              <Label>Usuário</Label>
+              <Input value={user} onChange={(e) => setUser(e.target.value)} placeholder="admin" required />
+            </div>
+            <div>
+              <Label>Senha</Label>
+              <Input type="password" value={password} onChange={(e) => setPassword(e.target.value)} required />
+            </div>
+            <Button type="submit" className="w-full" disabled={loading}>
+              {loading ? "Entrando..." : "Entrar"}
+            </Button>
+          </form>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
