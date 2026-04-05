@@ -1,5 +1,5 @@
 import { Link, useLocation, useNavigate } from "react-router-dom";
-import { LayoutDashboard, Package, ShoppingCart, BarChart3, LogOut } from "lucide-react";
+import { LayoutDashboard, Package, ShoppingCart, BarChart3, LogOut, Users } from "lucide-react";
 import { cn } from "@/lib/utils";
 import logo from "@/assets/logo-nova-acropole.png";
 
@@ -8,6 +8,7 @@ const navItems = [
   { to: "/products", label: "Produtos", icon: Package },
   { to: "/pos", label: "PDV", icon: ShoppingCart },
   { to: "/reports", label: "Relatórios", icon: BarChart3 },
+  { to: "/users", label: "Usuários", icon: Users },
 ];
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {

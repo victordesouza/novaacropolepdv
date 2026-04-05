@@ -39,11 +39,11 @@ export default function Login() {
           <form onSubmit={handleLogin} className="space-y-4">
             <div>
               <Label>Usuário</Label>
-              <Input value={user} onChange={(e) => setUser(e.target.value)} placeholder="admin" required />
+              <Input value={user} onChange={(e) => setUser(e.target.value)} placeholder="Usuário" required />
             </div>
             <div>
               <Label>Senha</Label>
-              <Input type="password" value={password} onChange={(e) => setPassword(e.target.value)} required />
+              <Input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Senha" required />
             </div>
             <Button type="submit" className="w-full" disabled={loading}>
               {loading ? "Entrando..." : "Entrar"}
