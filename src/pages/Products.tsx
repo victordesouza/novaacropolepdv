@@ -69,7 +69,7 @@ export default function Products() {
     try {
       await scanner.start(
         { facingMode: "environment" },
-        { fps: 15, qrbox: { width: 300, height: 150 }, formatsToSupport: [0, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13] },
+        { fps: 15, qrbox: { width: 300, height: 150 } },
         async (decodedText) => {
           await scanner.stop();
           setScanning(false);
