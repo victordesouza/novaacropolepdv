@@ -1,5 +1,5 @@
 import { Link, useLocation, useNavigate } from "react-router-dom";
-import { LayoutDashboard, Package, ShoppingCart, BarChart3, LogOut } from "lucide-react";
+import { LayoutDashboard, Package, ShoppingCart, BarChart3, LogOut, Users } from "lucide-react";
 import { cn } from "@/lib/utils";
 import logo from "@/assets/logo-nova-acropole.png";
 
