@@ -8,6 +8,7 @@ const navItems = [
   { to: "/products", label: "Produtos", icon: Package },
   { to: "/pos", label: "PDV", icon: ShoppingCart },
   { to: "/reports", label: "Relatórios", icon: BarChart3 },
+  { to: "/users", label: "Usuários", icon: Users },
 ];
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {

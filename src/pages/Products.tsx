@@ -7,18 +7,32 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Switch } from "@/components/ui/switch";
-import { Plus, Camera, ArrowUpDown, Image as ImageIcon } from "lucide-react";
+import { Plus, Camera, ArrowUpDown, Image as ImageIcon, Pencil, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
+import { formatBRL, maskBRL, parseBRL } from "@/lib/currency";
 
 const CATEGORIES = ["Livraria", "Vestuário", "Velas", "Papelaria", "Brindes", "Outros"];
 
 type SortKey = "name" | "price" | "stock_quantity" | "category";
 type SortDir = "asc" | "desc";
 
+interface ProductForm {
+  name: string; barcode: string; description: string; category: string;
+  price: string; cost_price: string; stock_quantity: string; is_book: boolean; author: string;
+}
+
+const emptyForm: ProductForm = {
+  name: "", barcode: "", description: "", category: "Livraria",
+  price: "", cost_price: "", stock_quantity: "", is_book: false, author: "",
+};
+
 export default function Products() {
   const queryClient = useQueryClient();
   const [open, setOpen] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [deleteId, setDeleteId] = useState<string | null>(null);
   const [sortKey, setSortKey] = useState<SortKey>("name");
   const [sortDir, setSortDir] = useState<SortDir>("asc");
   const [scanning, setScanning] = useState(false);
@@ -26,11 +40,7 @@ export default function Products() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
-
-  const [form, setForm] = useState({
-    name: "", barcode: "", description: "", category: "Livraria",
-    price: "", cost_price: "", stock_quantity: "", is_book: false,
-  });
+  const [form, setForm] = useState<ProductForm>({ ...emptyForm });
 
   const { data: products, isLoading } = useQuery({
     queryKey: ["products"],
@@ -41,11 +51,8 @@ export default function Products() {
   });
 
   const sortedProducts = [...(products ?? [])].sort((a, b) => {
-    const av = a[sortKey];
-    const bv = b[sortKey];
-    if (typeof av === "string" && typeof bv === "string") {
-      return sortDir === "asc" ? av.localeCompare(bv) : bv.localeCompare(av);
-    }
+    const av = a[sortKey]; const bv = b[sortKey];
+    if (typeof av === "string" && typeof bv === "string") return sortDir === "asc" ? av.localeCompare(bv) : bv.localeCompare(av);
     return sortDir === "asc" ? Number(av) - Number(bv) : Number(bv) - Number(av);
   });
 
@@ -62,7 +69,7 @@ export default function Products() {
     try {
       await scanner.start(
         { facingMode: "environment" },
-        { fps: 10, qrbox: { width: 250, height: 150 } },
+        { fps: 15, qrbox: { width: 300, height: 150 }, formatsToSupport: [0, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13] },
         async (decodedText) => {
           await scanner.stop();
           setScanning(false);
@@ -84,61 +91,94 @@ export default function Products() {
 
   const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) {
-      setImageFile(file);
-      setImagePreview(URL.createObjectURL(file));
-    }
+    if (file) { setImageFile(file); setImagePreview(URL.createObjectURL(file)); }
   };
 
-  const createMutation = useMutation({
+  const saveMutation = useMutation({
     mutationFn: async () => {
       let image_url: string | null = null;
-
       if (imageFile) {
         const ext = imageFile.name.split(".").pop();
         const path = `${Date.now()}.${ext}`;
-        const { error: uploadError } = await supabase.storage
-          .from("product-images")
-          .upload(path, imageFile);
+        const { error: uploadError } = await supabase.storage.from("product-images").upload(path, imageFile);
         if (uploadError) throw uploadError;
-        const { data: urlData } = supabase.storage
-          .from("product-images")
-          .getPublicUrl(path);
+        const { data: urlData } = supabase.storage.from("product-images").getPublicUrl(path);
         image_url = urlData.publicUrl;
       }
 
-      const { error } = await supabase.from("products").insert({
+      const payload: any = {
         name: form.name,
         barcode: form.barcode || null,
         description: form.description || null,
         category: form.category,
-        price: parseFloat(form.price) || 0,
-        cost_price: parseFloat(form.cost_price) || 0,
+        price: parseBRL(form.price),
+        cost_price: parseBRL(form.cost_price),
         stock_quantity: parseInt(form.stock_quantity) || 0,
         is_book: form.is_book,
-        image_url,
-      });
-      if (error) throw error;
+        author: form.author || null,
+      };
+      if (image_url) payload.image_url = image_url;
+
+      if (editingId) {
+        const { error } = await supabase.from("products").update(payload).eq("id", editingId);
+        if (error) throw error;
+      } else {
+        if (!image_url) payload.image_url = null;
+        const { error } = await supabase.from("products").insert(payload);
+        if (error) throw error;
+      }
     },
     onSuccess: () => {
-      toast.success("Produto cadastrado com sucesso!");
+      toast.success(editingId ? "Produto atualizado!" : "Produto cadastrado!");
       queryClient.invalidateQueries({ queryKey: ["products"] });
-      setOpen(false);
-      resetForm();
+      closeDialog();
     },
     onError: (e: any) => toast.error(e.message),
   });
 
-  const resetForm = () => {
-    setForm({ name: "", barcode: "", description: "", category: "Livraria", price: "", cost_price: "", stock_quantity: "", is_book: false });
+  const deleteMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase.from("products").delete().eq("id", id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      toast.success("Produto excluído!");
+      queryClient.invalidateQueries({ queryKey: ["products"] });
+      setDeleteId(null);
+    },
+    onError: (e: any) => toast.error(e.message),
+  });
+
+  const openEdit = (product: any) => {
+    setEditingId(product.id);
+    setForm({
+      name: product.name,
+      barcode: product.barcode || "",
+      description: product.description || "",
+      category: product.category,
+      price: formatBRL(Number(product.price)),
+      cost_price: formatBRL(Number(product.cost_price)),
+      stock_quantity: String(product.stock_quantity),
+      is_book: product.is_book,
+      author: product.author || "",
+    });
+    setImagePreview(product.image_url || null);
+    setImageFile(null);
+    setOpen(true);
+  };
+
+  const closeDialog = () => {
+    setOpen(false);
+    setEditingId(null);
+    setForm({ ...emptyForm });
     setImageFile(null);
     setImagePreview(null);
+    stopBarcodeScanner();
   };
 
   const SortButton = ({ label, field }: { label: string; field: SortKey }) => (
     <button onClick={() => toggleSort(field)} className="flex items-center gap-1 font-medium text-muted-foreground hover:text-foreground">
-      {label}
-      <ArrowUpDown className={`h-3 w-3 ${sortKey === field ? "text-primary" : ""}`} />
+      {label}<ArrowUpDown className={`h-3 w-3 ${sortKey === field ? "text-primary" : ""}`} />
     </button>
   );
 
@@ -146,26 +186,29 @@ export default function Products() {
     <AppLayout>
       <div className="mb-6 flex items-center justify-between">
         <h1 className="text-2xl font-bold text-foreground">Produtos</h1>
-        <Dialog open={open} onOpenChange={(v) => { setOpen(v); if (!v) { resetForm(); stopBarcodeScanner(); } }}>
+        <Dialog open={open} onOpenChange={(v) => { if (!v) closeDialog(); else setOpen(true); }}>
           <DialogTrigger asChild>
             <Button><Plus className="mr-2 h-4 w-4" />Novo Produto</Button>
           </DialogTrigger>
           <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
-            <DialogHeader><DialogTitle>Cadastrar Produto</DialogTitle></DialogHeader>
-            <form onSubmit={(e) => { e.preventDefault(); createMutation.mutate(); }} className="space-y-4">
+            <DialogHeader><DialogTitle>{editingId ? "Editar Produto" : "Cadastrar Produto"}</DialogTitle></DialogHeader>
+            <form onSubmit={(e) => { e.preventDefault(); saveMutation.mutate(); }} className="space-y-4">
               <div className="flex items-center gap-3">
                 <Switch checked={form.is_book} onCheckedChange={(v) => setForm({ ...form, is_book: v })} />
                 <Label>É um livro?</Label>
               </div>
               <div><Label>Nome *</Label><Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required /></div>
 
-              {/* Barcode with camera option */}
+              {form.is_book && (
+                <div><Label>Autor</Label><Input value={form.author} onChange={(e) => setForm({ ...form, author: e.target.value })} placeholder="Nome do autor (opcional)" /></div>
+              )}
+
               <div>
                 <Label>Código de Barras</Label>
                 <div className="flex gap-2">
                   <Input value={form.barcode} onChange={(e) => setForm({ ...form, barcode: e.target.value })} placeholder="Digite ou escaneie" />
                   <Button type="button" variant="outline" size="icon" onClick={scanning ? stopBarcodeScanner : startBarcodeScanner}>
-                    <Camera className="h-4 w-4" />
+                    {scanning ? <X className="h-4 w-4" /> : <Camera className="h-4 w-4" />}
                   </Button>
                 </div>
                 {scanning && (
@@ -184,33 +227,48 @@ export default function Products() {
                 </Select>
               </div>
               <div className="grid grid-cols-2 gap-4">
-                <div><Label>Preço (R$)</Label><Input type="number" step="0.01" value={form.price} onChange={(e) => setForm({ ...form, price: e.target.value })} /></div>
-                <div><Label>Custo (R$)</Label><Input type="number" step="0.01" value={form.cost_price} onChange={(e) => setForm({ ...form, cost_price: e.target.value })} /></div>
+                <div>
+                  <Label>Preço (R$)</Label>
+                  <Input value={form.price} onChange={(e) => setForm({ ...form, price: maskBRL(e.target.value) })} placeholder="0,00" inputMode="numeric" />
+                </div>
+                <div>
+                  <Label>Custo (R$)</Label>
+                  <Input value={form.cost_price} onChange={(e) => setForm({ ...form, cost_price: maskBRL(e.target.value) })} placeholder="0,00" inputMode="numeric" />
+                </div>
               </div>
               <div><Label>Quantidade em Estoque</Label><Input type="number" value={form.stock_quantity} onChange={(e) => setForm({ ...form, stock_quantity: e.target.value })} /></div>
 
-              {/* Image upload */}
               <div>
                 <Label>Imagem do Produto</Label>
                 <input ref={fileInputRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={handleImageSelect} />
                 <div className="mt-1 flex items-center gap-3">
                   <Button type="button" variant="outline" onClick={() => fileInputRef.current?.click()}>
-                    <ImageIcon className="mr-2 h-4 w-4" />
-                    {imageFile ? "Trocar imagem" : "Selecionar imagem"}
+                    <ImageIcon className="mr-2 h-4 w-4" />{imageFile ? "Trocar imagem" : "Selecionar imagem"}
                   </Button>
-                  {imagePreview && (
-                    <img src={imagePreview} alt="Preview" className="h-16 w-16 rounded-lg border object-cover" />
-                  )}
+                  {imagePreview && <img src={imagePreview} alt="Preview" className="h-16 w-16 rounded-lg border object-cover" />}
                 </div>
               </div>
 
-              <Button type="submit" className="w-full" disabled={createMutation.isPending}>
-                {createMutation.isPending ? "Salvando..." : "Cadastrar"}
+              <Button type="submit" className="w-full" disabled={saveMutation.isPending}>
+                {saveMutation.isPending ? "Salvando..." : editingId ? "Salvar Alterações" : "Cadastrar"}
               </Button>
             </form>
           </DialogContent>
         </Dialog>
       </div>
+
+      <AlertDialog open={!!deleteId} onOpenChange={(v) => { if (!v) setDeleteId(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Excluir produto?</AlertDialogTitle>
+            <AlertDialogDescription>Esta ação não pode ser desfeita.</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction onClick={() => deleteId && deleteMutation.mutate(deleteId)}>Excluir</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {isLoading ? (
         <p className="text-muted-foreground">Carregando...</p>
@@ -223,6 +281,7 @@ export default function Products() {
                 <th className="hidden px-4 py-3 text-left md:table-cell"><SortButton label="Categoria" field="category" /></th>
                 <th className="px-4 py-3 text-right"><SortButton label="Preço" field="price" /></th>
                 <th className="px-4 py-3 text-right"><SortButton label="Estoque" field="stock_quantity" /></th>
+                <th className="px-4 py-3 text-right">Ações</th>
               </tr>
             </thead>
             <tbody>
@@ -233,27 +292,30 @@ export default function Products() {
                       {p.image_url ? (
                         <img src={p.image_url} alt={p.name} className="h-10 w-10 rounded border object-cover" />
                       ) : (
-                        <div className="flex h-10 w-10 items-center justify-center rounded border bg-muted">
-                          <ImageIcon className="h-4 w-4 text-muted-foreground" />
-                        </div>
+                        <div className="flex h-10 w-10 items-center justify-center rounded border bg-muted"><ImageIcon className="h-4 w-4 text-muted-foreground" /></div>
                       )}
                       <div>
-                        {p.name}
+                        <span>{p.name}</span>
                         {p.is_book && <span className="ml-2 rounded bg-primary/10 px-1.5 py-0.5 text-xs text-primary">Livro</span>}
+                        {(p as any).author && <p className="text-xs text-muted-foreground">{(p as any).author}</p>}
                       </div>
                     </div>
                   </td>
                   <td className="hidden px-4 py-3 text-muted-foreground md:table-cell">{p.category}</td>
-                  <td className="px-4 py-3 text-right">R$ {Number(p.price).toFixed(2)}</td>
+                  <td className="px-4 py-3 text-right">R$ {formatBRL(Number(p.price))}</td>
                   <td className="px-4 py-3 text-right">
-                    <span className={p.stock_quantity <= 5 ? "font-semibold text-destructive" : ""}>
-                      {p.stock_quantity}
-                    </span>
+                    <span className={p.stock_quantity <= 5 ? "font-semibold text-destructive" : ""}>{p.stock_quantity}</span>
+                  </td>
+                  <td className="px-4 py-3 text-right">
+                    <div className="flex justify-end gap-1">
+                      <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => openEdit(p)}><Pencil className="h-4 w-4" /></Button>
+                      <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setDeleteId(p.id)}><Trash2 className="h-4 w-4 text-destructive" /></Button>
+                    </div>
                   </td>
                 </tr>
               ))}
               {sortedProducts.length === 0 && (
-                <tr><td colSpan={4} className="px-4 py-8 text-center text-muted-foreground">Nenhum produto cadastrado.</td></tr>
+                <tr><td colSpan={5} className="px-4 py-8 text-center text-muted-foreground">Nenhum produto cadastrado.</td></tr>
               )}
             </tbody>
           </table>
