@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useCallback } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import AppLayout from "@/components/AppLayout";
@@ -38,9 +38,13 @@ export default function Products() {
   const [scanning, setScanning] = useState(false);
   const scannerRef = useRef<any>(null);
   const galleryInputRef = useRef<HTMLInputElement>(null);
-  const cameraInputRef = useRef<HTMLInputElement>(null);
+  
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
+  const [cameraOpen, setCameraOpen] = useState(false);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
   const [form, setForm] = useState<ProductForm>({ ...emptyForm });
 
   const { data: products, isLoading } = useQuery({
@@ -93,6 +97,50 @@ export default function Products() {
   const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) { setImageFile(file); setImagePreview(URL.createObjectURL(file)); }
+  };
+
+  const openCamera = async () => {
+    setCameraOpen(true);
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: "environment", width: { ideal: 1280 }, height: { ideal: 720 } },
+      });
+      streamRef.current = stream;
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+        videoRef.current.play();
+      }
+    } catch {
+      toast.error("Não foi possível acessar a câmera.");
+      setCameraOpen(false);
+    }
+  };
+
+  const capturePhoto = useCallback(() => {
+    const video = videoRef.current;
+    const canvas = canvasRef.current;
+    if (!video || !canvas) return;
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    ctx.drawImage(video, 0, 0);
+    canvas.toBlob((blob) => {
+      if (blob) {
+        const file = new File([blob], `foto_${Date.now()}.jpg`, { type: "image/jpeg" });
+        setImageFile(file);
+        setImagePreview(URL.createObjectURL(file));
+      }
+      closeCamera();
+    }, "image/jpeg", 0.85);
+  }, []);
+
+  const closeCamera = () => {
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((t) => t.stop());
+      streamRef.current = null;
+    }
+    setCameraOpen(false);
   };
 
   const saveMutation = useMutation({
@@ -175,6 +223,7 @@ export default function Products() {
     setImageFile(null);
     setImagePreview(null);
     stopBarcodeScanner();
+    closeCamera();
   };
 
   const SortButton = ({ label, field }: { label: string; field: SortKey }) => (
@@ -242,16 +291,35 @@ export default function Products() {
               <div>
                 <Label>Imagem do Produto</Label>
                 <input ref={galleryInputRef} type="file" accept="image/*" className="hidden" onChange={handleImageSelect} />
-                <input ref={cameraInputRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={handleImageSelect} />
-                <div className="mt-1 flex items-center gap-2">
-                  <Button type="button" variant="outline" onClick={() => galleryInputRef.current?.click()}>
-                    <ImageIcon className="mr-2 h-4 w-4" />Galeria
-                  </Button>
-                  <Button type="button" variant="outline" onClick={() => cameraInputRef.current?.click()}>
-                    <Camera className="mr-2 h-4 w-4" />Câmera
-                  </Button>
-                  {imagePreview && <img src={imagePreview} alt="Preview" className="h-16 w-16 rounded-lg border object-cover" />}
-                </div>
+                <canvas ref={canvasRef} className="hidden" />
+                
+                {cameraOpen && (
+                  <div className="mt-2 space-y-2">
+                    <div className="overflow-hidden rounded-lg border">
+                      <video ref={videoRef} autoPlay playsInline muted className="w-full" />
+                    </div>
+                    <div className="flex gap-2">
+                      <Button type="button" className="flex-1" onClick={capturePhoto}>
+                        <Camera className="mr-2 h-4 w-4" />Tirar Foto
+                      </Button>
+                      <Button type="button" variant="outline" onClick={closeCamera}>
+                        <X className="mr-2 h-4 w-4" />Cancelar
+                      </Button>
+                    </div>
+                  </div>
+                )}
+
+                {!cameraOpen && (
+                  <div className="mt-1 flex items-center gap-2">
+                    <Button type="button" variant="outline" onClick={() => galleryInputRef.current?.click()}>
+                      <ImageIcon className="mr-2 h-4 w-4" />Galeria
+                    </Button>
+                    <Button type="button" variant="outline" onClick={openCamera}>
+                      <Camera className="mr-2 h-4 w-4" />Câmera
+                    </Button>
+                    {imagePreview && <img src={imagePreview} alt="Preview" className="h-16 w-16 rounded-lg border object-cover" />}
+                  </div>
+                )}
               </div>
 
               <Button type="submit" className="w-full" disabled={saveMutation.isPending}>
