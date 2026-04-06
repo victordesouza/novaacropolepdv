@@ -99,6 +99,50 @@ export default function Products() {
     if (file) { setImageFile(file); setImagePreview(URL.createObjectURL(file)); }
   };
 
+  const openCamera = async () => {
+    setCameraOpen(true);
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: "environment", width: { ideal: 1280 }, height: { ideal: 720 } },
+      });
+      streamRef.current = stream;
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+        videoRef.current.play();
+      }
+    } catch {
+      toast.error("Não foi possível acessar a câmera.");
+      setCameraOpen(false);
+    }
+  };
+
+  const capturePhoto = useCallback(() => {
+    const video = videoRef.current;
+    const canvas = canvasRef.current;
+    if (!video || !canvas) return;
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    ctx.drawImage(video, 0, 0);
+    canvas.toBlob((blob) => {
+      if (blob) {
+        const file = new File([blob], `foto_${Date.now()}.jpg`, { type: "image/jpeg" });
+        setImageFile(file);
+        setImagePreview(URL.createObjectURL(file));
+      }
+      closeCamera();
+    }, "image/jpeg", 0.85);
+  }, []);
+
+  const closeCamera = () => {
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((t) => t.stop());
+      streamRef.current = null;
+    }
+    setCameraOpen(false);
+  };
+
   const saveMutation = useMutation({
     mutationFn: async () => {
       let image_url: string | null = null;
