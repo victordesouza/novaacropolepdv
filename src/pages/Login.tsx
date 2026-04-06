@@ -36,7 +36,11 @@ export default function Login() {
       const found = users.find((u) => u.username === user && u.password === password);
       if (found) {
         localStorage.setItem("na-auth", "true");
-        toast.success("Bem-vindo à Nova Acrópole!");
+        localStorage.setItem("na-current-user", JSON.stringify({
+          username: found.username,
+          loginTime: new Date().toISOString()
+        }));
+        toast.success(`Bem-vindo, ${found.username}!`);
         navigate("/");
       } else {
         toast.error("Usuário ou senha incorretos.");

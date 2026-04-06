@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from "react";
+import React, { useState, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import AppLayout from "@/components/AppLayout";
@@ -9,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Switch } from "@/components/ui/switch";
-import { Plus, Camera, ArrowUpDown, Image as ImageIcon, Pencil, Trash2, X } from "lucide-react";
+import { Plus, Camera, ArrowUpDown, Image as ImageIcon, Pencil, Trash2, X, Search, Filter, ChevronLeft, ChevronRight } from "lucide-react";
 import { toast } from "sonner";
 import { formatBRL, maskBRL, parseBRL } from "@/lib/currency";
 
@@ -36,18 +36,25 @@ export default function Products() {
   const [sortKey, setSortKey] = useState<SortKey>("name");
   const [sortDir, setSortDir] = useState<SortDir>("asc");
   const [scanning, setScanning] = useState(false);
+  const [cameraActive, setCameraActive] = useState(false);
+
+  // Estados para filtros e paginação
+  const [searchTerm, setSearchTerm] = useState("");
+  const [categoryFilter, setCategoryFilter] = useState<string>("all");
+  const [bookFilter, setBookFilter] = useState<string>("all"); // "all", "books", "non-books"
+  const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage] = useState(12);
+
   const scannerRef = useRef<any>(null);
+  const cameraStreamRef = useRef<MediaStream | null>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
   const galleryInputRef = useRef<HTMLInputElement>(null);
-  
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
-  const [cameraOpen, setCameraOpen] = useState(false);
-  const videoRef = useRef<HTMLVideoElement>(null);
-  const streamRef = useRef<MediaStream | null>(null);
-  const canvasRef = useRef<HTMLCanvasElement>(null);
   const [form, setForm] = useState<ProductForm>({ ...emptyForm });
 
-  const { data: products, isLoading } = useQuery({
+  const { data: allProducts, isLoading } = useQuery({
     queryKey: ["products"],
     queryFn: async () => {
       const { data } = await supabase.from("products").select("*").order("name");
@@ -55,11 +62,40 @@ export default function Products() {
     },
   });
 
-  const sortedProducts = [...(products ?? [])].sort((a, b) => {
+  // Aplicar filtros e busca
+  const filteredProducts = (allProducts ?? []).filter(product => {
+    // Filtro de busca (nome ou autor)
+    const matchesSearch = searchTerm === "" ||
+      product.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (product.author && product.author.toLowerCase().includes(searchTerm.toLowerCase()));
+
+    // Filtro de categoria
+    const matchesCategory = categoryFilter === "all" || product.category === categoryFilter;
+
+    // Filtro de tipo (livro ou não)
+    const matchesBookFilter =
+      bookFilter === "all" ||
+      (bookFilter === "books" && product.is_book) ||
+      (bookFilter === "non-books" && !product.is_book);
+
+    return matchesSearch && matchesCategory && matchesBookFilter;
+  });
+
+  // Aplicar ordenação
+  const sortedProducts = [...filteredProducts].sort((a, b) => {
     const av = a[sortKey]; const bv = b[sortKey];
     if (typeof av === "string" && typeof bv === "string") return sortDir === "asc" ? av.localeCompare(bv) : bv.localeCompare(av);
     return sortDir === "asc" ? Number(av) - Number(bv) : Number(bv) - Number(av);
   });
+
+  // Paginação
+  const totalProducts = sortedProducts.length;
+  const totalPages = Math.ceil(totalProducts / itemsPerPage);
+  const startIndex = (currentPage - 1) * itemsPerPage;
+  const paginatedProducts = sortedProducts.slice(startIndex, startIndex + itemsPerPage);
+
+  // Reset página quando filtros mudam
+  const resetToFirstPage = () => setCurrentPage(1);
 
   const toggleSort = (key: SortKey) => {
     if (sortKey === key) setSortDir(d => d === "asc" ? "desc" : "asc");
@@ -94,53 +130,58 @@ export default function Products() {
     setScanning(false);
   };
 
-  const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) { setImageFile(file); setImagePreview(URL.createObjectURL(file)); }
-  };
-
-  const openCamera = async () => {
-    setCameraOpen(true);
+  const startCamera = async () => {
     try {
+      setCameraActive(true);
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: "environment", width: { ideal: 1280 }, height: { ideal: 720 } },
+        video: { facingMode: "environment" }
       });
-      streamRef.current = stream;
+      cameraStreamRef.current = stream;
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
         videoRef.current.play();
       }
-    } catch {
+    } catch (error) {
       toast.error("Não foi possível acessar a câmera.");
-      setCameraOpen(false);
+      setCameraActive(false);
     }
   };
 
-  const capturePhoto = useCallback(() => {
-    const video = videoRef.current;
-    const canvas = canvasRef.current;
-    if (!video || !canvas) return;
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
-    ctx.drawImage(video, 0, 0);
-    canvas.toBlob((blob) => {
-      if (blob) {
-        const file = new File([blob], `foto_${Date.now()}.jpg`, { type: "image/jpeg" });
-        setImageFile(file);
-        setImagePreview(URL.createObjectURL(file));
-      }
-      closeCamera();
-    }, "image/jpeg", 0.85);
-  }, []);
-
-  const closeCamera = () => {
-    if (streamRef.current) {
-      streamRef.current.getTracks().forEach((t) => t.stop());
-      streamRef.current = null;
+  const stopCamera = () => {
+    if (cameraStreamRef.current) {
+      cameraStreamRef.current.getTracks().forEach(track => track.stop());
+      cameraStreamRef.current = null;
     }
-    setCameraOpen(false);
+    setCameraActive(false);
+  };
+
+  const takePicture = () => {
+    if (videoRef.current && canvasRef.current) {
+      const video = videoRef.current;
+      const canvas = canvasRef.current;
+      const context = canvas.getContext('2d');
+
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+
+      if (context) {
+        context.drawImage(video, 0, 0);
+        canvas.toBlob((blob) => {
+          if (blob) {
+            const file = new File([blob], `photo_${Date.now()}.jpg`, { type: 'image/jpeg' });
+            setImageFile(file);
+            setImagePreview(URL.createObjectURL(file));
+            stopCamera();
+            toast.success("Foto capturada!");
+          }
+        }, 'image/jpeg', 0.8);
+      }
+    }
+  };
+
+  const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) { setImageFile(file); setImagePreview(URL.createObjectURL(file)); }
   };
 
   const saveMutation = useMutation({
@@ -223,7 +264,7 @@ export default function Products() {
     setImageFile(null);
     setImagePreview(null);
     stopBarcodeScanner();
-    closeCamera();
+    stopCamera();
   };
 
   const SortButton = ({ label, field }: { label: string; field: SortKey }) => (
@@ -291,33 +332,36 @@ export default function Products() {
               <div>
                 <Label>Imagem do Produto</Label>
                 <input ref={galleryInputRef} type="file" accept="image/*" className="hidden" onChange={handleImageSelect} />
-                <canvas ref={canvasRef} className="hidden" />
-                
-                {cameraOpen && (
-                  <div className="mt-2 space-y-2">
-                    <div className="overflow-hidden rounded-lg border">
-                      <video ref={videoRef} autoPlay playsInline muted className="w-full" />
-                    </div>
-                    <div className="flex gap-2">
-                      <Button type="button" className="flex-1" onClick={capturePhoto}>
-                        <Camera className="mr-2 h-4 w-4" />Tirar Foto
-                      </Button>
-                      <Button type="button" variant="outline" onClick={closeCamera}>
-                        <X className="mr-2 h-4 w-4" />Cancelar
-                      </Button>
-                    </div>
-                  </div>
-                )}
+                <div className="mt-1 flex items-center gap-2">
+                  <Button type="button" variant="outline" onClick={() => galleryInputRef.current?.click()}>
+                    <ImageIcon className="mr-2 h-4 w-4" />Galeria
+                  </Button>
+                  <Button type="button" variant="outline" onClick={cameraActive ? stopCamera : startCamera}>
+                    <Camera className="mr-2 h-4 w-4" />
+                    {cameraActive ? "Parar Câmera" : "Câmera"}
+                  </Button>
+                  {imagePreview && <img src={imagePreview} alt="Preview" className="h-16 w-16 rounded-lg border object-cover" />}
+                </div>
 
-                {!cameraOpen && (
-                  <div className="mt-1 flex items-center gap-2">
-                    <Button type="button" variant="outline" onClick={() => galleryInputRef.current?.click()}>
-                      <ImageIcon className="mr-2 h-4 w-4" />Galeria
-                    </Button>
-                    <Button type="button" variant="outline" onClick={openCamera}>
-                      <Camera className="mr-2 h-4 w-4" />Câmera
-                    </Button>
-                    {imagePreview && <img src={imagePreview} alt="Preview" className="h-16 w-16 rounded-lg border object-cover" />}
+                {cameraActive && (
+                  <div className="mt-4 space-y-2">
+                    <div className="relative overflow-hidden rounded-lg border">
+                      <video
+                        ref={videoRef}
+                        className="w-full max-h-64 object-cover"
+                        playsInline
+                        muted
+                      />
+                      <Button
+                        type="button"
+                        onClick={takePicture}
+                        className="absolute bottom-2 left-1/2 transform -translate-x-1/2"
+                        size="lg"
+                      >
+                        📷 Tirar Foto
+                      </Button>
+                    </div>
+                    <canvas ref={canvasRef} className="hidden" />
                   </div>
                 )}
               </div>
@@ -343,22 +387,101 @@ export default function Products() {
         </AlertDialogContent>
       </AlertDialog>
 
+      {/* Filtros e Busca */}
+      <div className="mb-6 rounded-lg border bg-card p-4">
+        <div className="mb-4 flex items-center gap-2">
+          <Filter className="h-4 w-4" />
+          <h2 className="font-semibold">Filtros e Busca</h2>
+        </div>
+
+        <div className="grid gap-4 md:grid-cols-4">
+          {/* Busca */}
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              className="pl-10"
+              placeholder="Buscar por nome ou autor..."
+              value={searchTerm}
+              onChange={(e) => {
+                setSearchTerm(e.target.value);
+                resetToFirstPage();
+              }}
+            />
+          </div>
+
+          {/* Filtro de Categoria */}
+          <Select value={categoryFilter} onValueChange={(value) => {
+            setCategoryFilter(value);
+            resetToFirstPage();
+          }}>
+            <SelectTrigger>
+              <SelectValue placeholder="Categoria" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Todas as categorias</SelectItem>
+              {CATEGORIES.map((category) => (
+                <SelectItem key={category} value={category}>
+                  {category}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
+          {/* Filtro de Tipo */}
+          <Select value={bookFilter} onValueChange={(value) => {
+            setBookFilter(value);
+            resetToFirstPage();
+          }}>
+            <SelectTrigger>
+              <SelectValue placeholder="Tipo" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Todos os tipos</SelectItem>
+              <SelectItem value="books">📚 Apenas livros</SelectItem>
+              <SelectItem value="non-books">📦 Produtos gerais</SelectItem>
+            </SelectContent>
+          </Select>
+
+          {/* Info e Reset */}
+          <div className="flex items-center gap-2">
+            <span className="text-sm text-muted-foreground">
+              {totalProducts} produto{totalProducts !== 1 ? 's' : ''} encontrado{totalProducts !== 1 ? 's' : ''}
+            </span>
+            {(searchTerm || categoryFilter !== "all" || bookFilter !== "all") && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setSearchTerm("");
+                  setCategoryFilter("all");
+                  setBookFilter("all");
+                  resetToFirstPage();
+                }}
+              >
+                Limpar
+              </Button>
+            )}
+          </div>
+        </div>
+      </div>
+
       {isLoading ? (
         <p className="text-muted-foreground">Carregando...</p>
       ) : (
-        <div className="overflow-x-auto rounded-lg border">
-          <table className="w-full text-sm">
-            <thead className="bg-muted">
-              <tr>
-                <th className="px-4 py-3 text-left"><SortButton label="Nome" field="name" /></th>
-                <th className="hidden px-4 py-3 text-left md:table-cell"><SortButton label="Categoria" field="category" /></th>
-                <th className="px-4 py-3 text-right"><SortButton label="Preço" field="price" /></th>
-                <th className="px-4 py-3 text-right"><SortButton label="Estoque" field="stock_quantity" /></th>
-                <th className="px-4 py-3 text-right">Ações</th>
-              </tr>
-            </thead>
-            <tbody>
-              {sortedProducts.map((p) => (
+        <>
+          <div className="overflow-x-auto rounded-lg border">
+            <table className="w-full text-sm">
+              <thead className="bg-muted">
+                <tr>
+                  <th className="px-4 py-3 text-left"><SortButton label="Nome" field="name" /></th>
+                  <th className="hidden px-4 py-3 text-left md:table-cell"><SortButton label="Categoria" field="category" /></th>
+                  <th className="px-4 py-3 text-right"><SortButton label="Preço" field="price" /></th>
+                  <th className="px-4 py-3 text-right"><SortButton label="Estoque" field="stock_quantity" /></th>
+                  <th className="px-4 py-3 text-right">Ações</th>
+                </tr>
+              </thead>
+              <tbody>
+                {paginatedProducts.map((p) => (
                 <tr key={p.id} className="border-t">
                   <td className="px-4 py-3 font-medium">
                     <div className="flex items-center gap-3">
@@ -387,12 +510,71 @@ export default function Products() {
                   </td>
                 </tr>
               ))}
-              {sortedProducts.length === 0 && (
-                <tr><td colSpan={5} className="px-4 py-8 text-center text-muted-foreground">Nenhum produto cadastrado.</td></tr>
+              {paginatedProducts.length === 0 && totalProducts === 0 && (
+                <tr><td colSpan={5} className="px-4 py-8 text-center text-muted-foreground">Nenhum produto encontrado.</td></tr>
+              )}
+              {paginatedProducts.length === 0 && totalProducts > 0 && (
+                <tr><td colSpan={5} className="px-4 py-8 text-center text-muted-foreground">Nenhum produto encontrado com os filtros aplicados.</td></tr>
               )}
             </tbody>
           </table>
         </div>
+
+        {/* Paginação */}
+        {totalPages > 1 && (
+          <div className="mt-6 flex items-center justify-between">
+            <p className="text-sm text-muted-foreground">
+              Mostrando {startIndex + 1} a {Math.min(startIndex + itemsPerPage, totalProducts)} de {totalProducts} produtos
+            </p>
+
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={currentPage === 1}
+                onClick={() => setCurrentPage(currentPage - 1)}
+              >
+                <ChevronLeft className="h-4 w-4" />
+                Anterior
+              </Button>
+
+              <div className="flex items-center gap-1">
+                {Array.from({ length: totalPages }, (_, i) => i + 1)
+                  .filter(page =>
+                    page === 1 ||
+                    page === totalPages ||
+                    (page >= currentPage - 1 && page <= currentPage + 1)
+                  )
+                  .map((page, index, arr) => (
+                    <React.Fragment key={page}>
+                      {index > 0 && arr[index - 1] !== page - 1 && (
+                        <span className="px-2 text-muted-foreground">...</span>
+                      )}
+                      <Button
+                        variant={currentPage === page ? "default" : "outline"}
+                        size="sm"
+                        className="w-8 h-8"
+                        onClick={() => setCurrentPage(page)}
+                      >
+                        {page}
+                      </Button>
+                    </React.Fragment>
+                  ))}
+              </div>
+
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={currentPage === totalPages}
+                onClick={() => setCurrentPage(currentPage + 1)}
+              >
+                Próxima
+                <ChevronRight className="h-4 w-4" />
+              </Button>
+            </div>
+          </div>
+        )}
+        </>
       )}
     </AppLayout>
   );
