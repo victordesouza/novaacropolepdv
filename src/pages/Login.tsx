@@ -7,6 +7,21 @@ import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { toast } from "sonner";
 import logo from "@/assets/logo-nova-acropole.png";
 
+type User = { username: string; password: string };
+
+function getUsers(): User[] {
+  try {
+    const raw = localStorage.getItem("na-users");
+    const users: User[] = raw ? JSON.parse(raw) : [];
+    if (!users.find((u) => u.username === "admin")) {
+      users.unshift({ username: "admin", password: "novaacropole" });
+    }
+    return users;
+  } catch {
+    return [{ username: "admin", password: "novaacropole" }];
+  }
+}
+
 export default function Login() {
   const navigate = useNavigate();
   const [user, setUser] = useState("");
@@ -17,7 +32,9 @@ export default function Login() {
     e.preventDefault();
     setLoading(true);
     setTimeout(() => {
-      if (user === "admin" && password === "novaacropole") {
+      const users = getUsers();
+      const found = users.find((u) => u.username === user && u.password === password);
+      if (found) {
         localStorage.setItem("na-auth", "true");
         toast.success("Bem-vindo à Nova Acrópole!");
         navigate("/");

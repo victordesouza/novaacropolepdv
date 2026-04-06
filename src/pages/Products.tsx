@@ -37,7 +37,8 @@ export default function Products() {
   const [sortDir, setSortDir] = useState<SortDir>("asc");
   const [scanning, setScanning] = useState(false);
   const scannerRef = useRef<any>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const galleryInputRef = useRef<HTMLInputElement>(null);
+  const cameraInputRef = useRef<HTMLInputElement>(null);
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [form, setForm] = useState<ProductForm>({ ...emptyForm });
@@ -240,10 +241,14 @@ export default function Products() {
 
               <div>
                 <Label>Imagem do Produto</Label>
-                <input ref={fileInputRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={handleImageSelect} />
-                <div className="mt-1 flex items-center gap-3">
-                  <Button type="button" variant="outline" onClick={() => fileInputRef.current?.click()}>
-                    <ImageIcon className="mr-2 h-4 w-4" />{imageFile ? "Trocar imagem" : "Selecionar imagem"}
+                <input ref={galleryInputRef} type="file" accept="image/*" className="hidden" onChange={handleImageSelect} />
+                <input ref={cameraInputRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={handleImageSelect} />
+                <div className="mt-1 flex items-center gap-2">
+                  <Button type="button" variant="outline" onClick={() => galleryInputRef.current?.click()}>
+                    <ImageIcon className="mr-2 h-4 w-4" />Galeria
+                  </Button>
+                  <Button type="button" variant="outline" onClick={() => cameraInputRef.current?.click()}>
+                    <Camera className="mr-2 h-4 w-4" />Câmera
                   </Button>
                   {imagePreview && <img src={imagePreview} alt="Preview" className="h-16 w-16 rounded-lg border object-cover" />}
                 </div>
@@ -297,7 +302,7 @@ export default function Products() {
                       <div>
                         <span>{p.name}</span>
                         {p.is_book && <span className="ml-2 rounded bg-primary/10 px-1.5 py-0.5 text-xs text-primary">Livro</span>}
-                        {(p as any).author && <p className="text-xs text-muted-foreground">{(p as any).author}</p>}
+                        {p.author && <p className="text-xs text-muted-foreground">{p.author}</p>}
                       </div>
                     </div>
                   </td>
