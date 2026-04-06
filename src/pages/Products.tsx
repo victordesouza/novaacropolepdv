@@ -223,6 +223,7 @@ export default function Products() {
     setImageFile(null);
     setImagePreview(null);
     stopBarcodeScanner();
+    closeCamera();
   };
 
   const SortButton = ({ label, field }: { label: string; field: SortKey }) => (
