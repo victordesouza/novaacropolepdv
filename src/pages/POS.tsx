@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Camera, Search, Trash2, ShoppingCart, X } from "lucide-react";
+import { Camera, Search, Trash2, ShoppingCart, X, Plus, Minus } from "lucide-react";
 import { toast } from "sonner";
 import { formatBRL } from "@/lib/currency";
 import type { Database } from "@/integrations/supabase/types";
@@ -52,6 +52,16 @@ export default function POS() {
     });
     setSearch("");
     setResults([]);
+  };
+
+  const updateQuantity = (productId: string, delta: number) => {
+    setCart((prev) => prev.map((i) => {
+      if (i.product.id !== productId) return i;
+      const newQty = i.quantity + delta;
+      if (newQty <= 0) return i;
+      if (newQty > i.product.stock_quantity) { toast.error("Estoque insuficiente!"); return i; }
+      return { ...i, quantity: newQty };
+    }));
   };
 
   const removeFromCart = (productId: string) => setCart((prev) => prev.filter((i) => i.product.id !== productId));
@@ -142,7 +152,7 @@ export default function POS() {
                     <p className="font-medium">{p.name}</p>
                     <p className="text-sm text-muted-foreground">
                       {p.category} · Estoque: {p.stock_quantity}
-                      {(p as any).author && ` · ${(p as any).author}`}
+                      {p.author && ` · ${p.author}`}
                     </p>
                   </div>
                   <span className="font-semibold text-primary">R$ {formatBRL(Number(p.price))}</span>
@@ -161,12 +171,19 @@ export default function POS() {
               <div className="max-h-60 space-y-2 overflow-y-auto">
                 {cart.map((item) => (
                   <div key={item.product.id} className="flex items-center justify-between rounded-lg border p-2">
-                    <div className="flex-1">
-                      <p className="text-sm font-medium">{item.product.name}</p>
-                      <p className="text-xs text-muted-foreground">{item.quantity}x R$ {formatBRL(Number(item.product.price))}</p>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium truncate">{item.product.name}</p>
+                      <p className="text-xs text-muted-foreground">R$ {formatBRL(Number(item.product.price))} un.</p>
                     </div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm font-semibold">R$ {formatBRL(Number(item.product.price) * item.quantity)}</span>
+                    <div className="flex items-center gap-1">
+                      <Button variant="outline" size="icon" className="h-7 w-7" onClick={() => updateQuantity(item.product.id, -1)}>
+                        <Minus className="h-3 w-3" />
+                      </Button>
+                      <span className="w-8 text-center text-sm font-semibold">{item.quantity}</span>
+                      <Button variant="outline" size="icon" className="h-7 w-7" onClick={() => updateQuantity(item.product.id, 1)}>
+                        <Plus className="h-3 w-3" />
+                      </Button>
+                      <span className="ml-1 w-20 text-right text-sm font-semibold">R$ {formatBRL(Number(item.product.price) * item.quantity)}</span>
                       <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => removeFromCart(item.product.id)}>
                         <Trash2 className="h-4 w-4 text-destructive" />
                       </Button>
