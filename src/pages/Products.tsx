@@ -41,6 +41,10 @@ export default function Products() {
   const cameraInputRef = useRef<HTMLInputElement>(null);
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
+  const [cameraOpen, setCameraOpen] = useState(false);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
   const [form, setForm] = useState<ProductForm>({ ...emptyForm });
 
   const { data: products, isLoading } = useQuery({
