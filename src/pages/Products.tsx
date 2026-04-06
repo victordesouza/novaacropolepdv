@@ -291,16 +291,35 @@ export default function Products() {
               <div>
                 <Label>Imagem do Produto</Label>
                 <input ref={galleryInputRef} type="file" accept="image/*" className="hidden" onChange={handleImageSelect} />
-                <input ref={cameraInputRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={handleImageSelect} />
-                <div className="mt-1 flex items-center gap-2">
-                  <Button type="button" variant="outline" onClick={() => galleryInputRef.current?.click()}>
-                    <ImageIcon className="mr-2 h-4 w-4" />Galeria
-                  </Button>
-                  <Button type="button" variant="outline" onClick={() => cameraInputRef.current?.click()}>
-                    <Camera className="mr-2 h-4 w-4" />Câmera
-                  </Button>
-                  {imagePreview && <img src={imagePreview} alt="Preview" className="h-16 w-16 rounded-lg border object-cover" />}
-                </div>
+                <canvas ref={canvasRef} className="hidden" />
+                
+                {cameraOpen && (
+                  <div className="mt-2 space-y-2">
+                    <div className="overflow-hidden rounded-lg border">
+                      <video ref={videoRef} autoPlay playsInline muted className="w-full" />
+                    </div>
+                    <div className="flex gap-2">
+                      <Button type="button" className="flex-1" onClick={capturePhoto}>
+                        <Camera className="mr-2 h-4 w-4" />Tirar Foto
+                      </Button>
+                      <Button type="button" variant="outline" onClick={closeCamera}>
+                        <X className="mr-2 h-4 w-4" />Cancelar
+                      </Button>
+                    </div>
+                  </div>
+                )}
+
+                {!cameraOpen && (
+                  <div className="mt-1 flex items-center gap-2">
+                    <Button type="button" variant="outline" onClick={() => galleryInputRef.current?.click()}>
+                      <ImageIcon className="mr-2 h-4 w-4" />Galeria
+                    </Button>
+                    <Button type="button" variant="outline" onClick={openCamera}>
+                      <Camera className="mr-2 h-4 w-4" />Câmera
+                    </Button>
+                    {imagePreview && <img src={imagePreview} alt="Preview" className="h-16 w-16 rounded-lg border object-cover" />}
+                  </div>
+                )}
               </div>
 
               <Button type="submit" className="w-full" disabled={saveMutation.isPending}>
