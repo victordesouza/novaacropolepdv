@@ -117,22 +117,45 @@ export default function Products() {
 
   const startBarcodeScanner = async () => {
     setScanning(true);
-    const { Html5Qrcode } = await import("html5-qrcode");
-    const scanner = new Html5Qrcode("product-barcode-scanner");
+    const { Html5Qrcode, Html5QrcodeSupportedFormats } = await import("html5-qrcode");
+    
+    // Filtro agressivo: mandar a IA ignorar o resto e focar só no padrão de livro/produto
+    const formatsToSupport = [
+      Html5QrcodeSupportedFormats.EAN_13, // Padrão dos livros (ISBN)
+      Html5QrcodeSupportedFormats.EAN_8,
+      Html5QrcodeSupportedFormats.UPC_A,
+      Html5QrcodeSupportedFormats.UPC_E,
+    ];
+
+    const scanner = new Html5Qrcode("product-barcode-scanner", { formatsToSupport });
     scannerRef.current = scanner;
+    
     try {
       await scanner.start(
         { facingMode: "environment" },
-        { fps: 15, qrbox: { width: 300, height: 150 } },
+        {
+          fps: 15,
+          disableFlip: true,
+          // Caixinha retangular no meio da tela
+          qrbox: { width: 280, height: 120 }, 
+          videoConstraints: {
+            facingMode: "environment",
+            // O HACK MÁGICO AQUI 👇
+            // Forçamos um zoom de 2.5x e foco contínuo no hardware da câmera
+            advanced: [{ zoom: 2.5 }, { focusMode: "continuous" }] as any
+          }
+        },
         async (decodedText) => {
           await scanner.stop();
           setScanning(false);
           setForm(f => ({ ...f, barcode: decodedText }));
           toast.success("Código lido: " + decodedText);
         },
-        () => {}
+        () => {
+          // Ignora os logs de frame perdido pra não travar a memória do celular
+        }
       );
-    } catch {
+    } catch (error) {
       toast.error("Não foi possível acessar a câmera.");
       setScanning(false);
     }

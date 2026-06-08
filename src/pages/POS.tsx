@@ -102,23 +102,53 @@ export default function POS() {
 
   const startScanner = async () => {
     setScanning(true);
-    const { Html5Qrcode } = await import("html5-qrcode");
-    const scanner = new Html5Qrcode(scannerContainerId);
+    // Importamos os formatos suportados
+    const { Html5Qrcode, Html5QrcodeSupportedFormats } = await import("html5-qrcode");
+    
+    // Filtro agressivo para a IA focar só em códigos de barras de produtos/livros
+    const formatsToSupport = [
+      Html5QrcodeSupportedFormats.EAN_13,
+      Html5QrcodeSupportedFormats.EAN_8,
+      Html5QrcodeSupportedFormats.UPC_A,
+      Html5QrcodeSupportedFormats.UPC_E,
+    ];
+
+    const scanner = new Html5Qrcode(scannerContainerId, { formatsToSupport });
     scannerRef.current = scanner;
+    
     try {
       await scanner.start(
         { facingMode: "environment" },
-        { fps: 15, qrbox: { width: 300, height: 150 } },
+        {
+          fps: 15,
+          disableFlip: true, // Poupa processamento do celular
+          qrbox: { width: 280, height: 120 }, // Caixa espremida horizontalmente
+          videoConstraints: {
+            facingMode: "environment",
+            // O HACK DO ZOOM E FOCO CONTÍNUO
+            advanced: [{ zoom: 2.5 }, { focusMode: "continuous" }] as any
+          }
+        },
         async (decodedText) => {
+          // Quando ele acha o código, ele para a câmera na hora
           await scanner.stop();
           setScanning(false);
+          
+          // Lógica do seu PDV: Vai no banco e tenta achar o produto
           const data = await firebaseProducts.getProductByBarcode(decodedText);
-          if (data) { addToCart(data); toast.success(`Produto encontrado: ${data.name}`); }
-          else toast.error("Produto não encontrado para este código.");
+          
+          if (data) { 
+            addToCart(data); 
+            toast.success(`Produto encontrado: ${data.name}`); 
+          } else {
+            toast.error("Produto não encontrado para este código.");
+          }
         },
-        () => {}
+        () => {
+          // Deixamos vazio para não poluir a memória do celular com logs de "procurando..."
+        }
       );
-    } catch {
+    } catch (error) {
       toast.error("Não foi possível acessar a câmera.");
       setScanning(false);
     }
