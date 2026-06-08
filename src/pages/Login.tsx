@@ -5,22 +5,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { toast } from "sonner";
+import { users as firebaseUsers } from "@/integrations/firebase";
 import logo from "@/assets/logo-nova-acropole.png";
-
-type User = { username: string; password: string };
-
-function getUsers(): User[] {
-  try {
-    const raw = localStorage.getItem("na-users");
-    const users: User[] = raw ? JSON.parse(raw) : [];
-    if (!users.find((u) => u.username === "admin")) {
-      users.unshift({ username: "admin", password: "novaacropole" });
-    }
-    return users;
-  } catch {
-    return [{ username: "admin", password: "novaacropole" }];
-  }
-}
 
 export default function Login() {
   const navigate = useNavigate();
@@ -28,25 +14,31 @@ export default function Login() {
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
 
-  const handleLogin = (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
-    setTimeout(() => {
-      const users = getUsers();
-      const found = users.find((u) => u.username === user && u.password === password);
-      if (found) {
-        localStorage.setItem("na-auth", "true");
-        localStorage.setItem("na-current-user", JSON.stringify({
-          username: found.username,
-          loginTime: new Date().toISOString()
-        }));
-        toast.success(`Bem-vindo, ${found.username}!`);
-        navigate("/");
-      } else {
+    try {
+      const loggedInUser = await firebaseUsers.validateUser(user.trim(), password);
+
+      if (!loggedInUser) {
         toast.error("Usuário ou senha incorretos.");
+        setLoading(false);
+        return;
       }
+
+      localStorage.setItem("na-auth", "true");
+      localStorage.setItem("na-current-user", JSON.stringify({
+        username: loggedInUser.username,
+        role: loggedInUser.role || "Operador",
+        loginTime: new Date().toISOString()
+      }));
+      toast.success(`Bem-vindo, ${loggedInUser.username}!`);
+      navigate("/");
+    } catch (e: any) {
+      toast.error("Erro ao fazer login: " + e.message);
+    } finally {
       setLoading(false);
-    }, 500);
+    }
   };
 
   return (
@@ -60,7 +52,14 @@ export default function Login() {
           <form onSubmit={handleLogin} className="space-y-4">
             <div>
               <Label>Usuário</Label>
-              <Input value={user} onChange={(e) => setUser(e.target.value)} placeholder="Usuário" required />
+              <Input
+                value={user}
+                onChange={(e) => setUser(e.target.value)}
+                placeholder="Usuário"
+                required
+                autoCapitalize="off"
+                autoCorrect="off"
+              />
             </div>
             <div>
               <Label>Senha</Label>

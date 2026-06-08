@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { supabase } from "@/integrations/supabase/client";
+import * as firebaseProducts from "@/integrations/firebase/queries/products";
+import * as firebaseSales from "@/integrations/firebase/queries/sales";
 import AppLayout from "@/components/AppLayout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -10,9 +11,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Camera, Search, Trash2, ShoppingCart, X, Plus, Minus, Package } from "lucide-react";
 import { toast } from "sonner";
 import { formatBRL } from "@/lib/currency";
-import type { Database } from "@/integrations/supabase/types";
+import type { Product } from "@/integrations/firebase/types";
 
-type Product = Database["public"]["Tables"]["products"]["Row"];
 type CartItem = { product: Product; quantity: number };
 
 export default function POS() {
@@ -30,12 +30,8 @@ export default function POS() {
     if (!search.trim()) { setResults([]); return; }
     const timeout = setTimeout(async () => {
       const term = search.trim();
-      const { data } = await supabase
-        .from("products")
-        .select("*")
-        .or(`name.ilike.%${term}%,barcode.eq.${term},author.ilike.%${term}%`)
-        .limit(10);
-      setResults(data ?? []);
+      const data = await firebaseProducts.searchProducts(term);
+      setResults(data);
     }, 300);
     return () => clearTimeout(timeout);
   }, [search]);
@@ -44,10 +40,10 @@ export default function POS() {
     setCart((prev) => {
       const existing = prev.find((i) => i.product.id === product.id);
       if (existing) {
-        if (existing.quantity >= product.stock_quantity) { toast.error("Estoque insuficiente!"); return prev; }
+        if (existing.quantity >= product.stockQuantity) { toast.error("Estoque insuficiente!"); return prev; }
         return prev.map((i) => i.product.id === product.id ? { ...i, quantity: i.quantity + 1 } : i);
       }
-      if (product.stock_quantity <= 0) { toast.error("Produto sem estoque!"); return prev; }
+      if (product.stockQuantity <= 0) { toast.error("Produto sem estoque!"); return prev; }
       return [...prev, { product, quantity: 1 }];
     });
     setSearch("");
@@ -59,7 +55,7 @@ export default function POS() {
       if (i.product.id !== productId) return i;
       const newQty = i.quantity + delta;
       if (newQty <= 0) return i;
-      if (newQty > i.product.stock_quantity) { toast.error("Estoque insuficiente!"); return i; }
+      if (newQty > i.product.stockQuantity) { toast.error("Estoque insuficiente!"); return i; }
       return { ...i, quantity: newQty };
     }));
   };
@@ -70,20 +66,26 @@ export default function POS() {
 
   const finalizeMutation = useMutation({
     mutationFn: async () => {
-      const { data: sale, error: saleError } = await supabase
-        .from("sales")
-        .insert({ total_amount: total, payment_method: paymentMethod, customer_name: customerName || null })
-        .select().single();
-      if (saleError) throw saleError;
+      const items = cart.map((i) => ({
+        productId: i.product.id,
+        quantity: i.quantity,
+        unitPrice: Number(i.product.price),
+      }));
 
-      const items = cart.map((i) => ({ sale_id: sale.id, product_id: i.product.id, quantity: i.quantity, unit_price: Number(i.product.price) }));
-      const { error: itemsError } = await supabase.from("sale_items").insert(items);
-      if (itemsError) throw itemsError;
+      const stockUpdates = cart.map((i) => ({
+        productId: i.product.id,
+        newQuantity: i.product.stockQuantity - i.quantity,
+      }));
 
-      for (const item of cart) {
-        const { error } = await supabase.from("products").update({ stock_quantity: item.product.stock_quantity - item.quantity }).eq("id", item.product.id);
-        if (error) throw error;
-      }
+      await firebaseSales.createSaleWithItems(
+        {
+          totalAmount: total,
+          paymentMethod: paymentMethod,
+          customerName: customerName || null,
+        },
+        items,
+        stockUpdates
+      );
     },
     onSuccess: () => {
       toast.success("Venda finalizada com sucesso!");
@@ -110,7 +112,7 @@ export default function POS() {
         async (decodedText) => {
           await scanner.stop();
           setScanning(false);
-          const { data } = await supabase.from("products").select("*").eq("barcode", decodedText).maybeSingle();
+          const data = await firebaseProducts.getProductByBarcode(decodedText);
           if (data) { addToCart(data); toast.success(`Produto encontrado: ${data.name}`); }
           else toast.error("Produto não encontrado para este código.");
         },
@@ -160,8 +162,8 @@ export default function POS() {
             <div className="rounded-lg border">
               {results.map((p) => (
                 <button key={p.id} onClick={() => addToCart(p)} className="flex w-full items-center gap-3 border-b p-3 text-left transition-colors last:border-0 hover:bg-muted">
-                  {p.image_url ? (
-                    <img src={p.image_url} alt={p.name} className="h-12 w-12 rounded border object-cover" />
+                  {p.imageUrl ? (
+                    <img src={p.imageUrl} alt={p.name} className="h-12 w-12 rounded border object-cover" />
                   ) : (
                     <div className="flex h-12 w-12 items-center justify-center rounded border bg-muted">
                       <Package className="h-6 w-6 text-muted-foreground" />
@@ -170,7 +172,7 @@ export default function POS() {
                   <div className="flex-1">
                     <p className="font-medium">{p.name}</p>
                     <p className="text-sm text-muted-foreground">
-                      {p.category} · Estoque: {p.stock_quantity}
+                      {p.category} · Estoque: {p.stockQuantity}
                       {p.author && ` · ${p.author}`}
                     </p>
                   </div>
@@ -203,8 +205,8 @@ export default function POS() {
               <div className="space-y-3 lg:col-span-2">
                 {cart.map((item) => (
                   <div key={item.product.id} className="flex items-center gap-4 rounded-lg border p-4">
-                    {item.product.image_url ? (
-                      <img src={item.product.image_url} alt={item.product.name} className="h-16 w-16 rounded border object-cover" />
+                    {item.product.imageUrl ? (
+                      <img src={item.product.imageUrl} alt={item.product.name} className="h-16 w-16 rounded border object-cover" />
                     ) : (
                       <div className="flex h-16 w-16 items-center justify-center rounded border bg-muted">
                         <Package className="h-8 w-8 text-muted-foreground" />

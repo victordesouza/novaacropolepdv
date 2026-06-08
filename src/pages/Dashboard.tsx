@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
-import { supabase } from "@/integrations/supabase/client";
+import * as firebaseSales from "@/integrations/firebase/queries/sales";
+import * as firebaseProducts from "@/integrations/firebase/queries/products";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { DollarSign, Package, AlertTriangle, ShoppingCart } from "lucide-react";
 import AppLayout from "@/components/AppLayout";
@@ -11,45 +12,30 @@ export default function Dashboard() {
   const { data: todaySales } = useQuery({
     queryKey: ["today-sales", today],
     queryFn: async () => {
-      const { data } = await supabase
-        .from("sales")
-        .select("total_amount")
-        .gte("created_at", today);
-      return data?.reduce((sum, s) => sum + Number(s.total_amount), 0) ?? 0;
+      const todayDate = new Date(today);
+      return await firebaseSales.getSalesTotalAmount(todayDate);
     },
   });
 
   const { data: monthlySales } = useQuery({
     queryKey: ["monthly-sales"],
     queryFn: async () => {
-      const { data } = await supabase
-        .from("sales")
-        .select("total_amount")
-        .gte("created_at", monthStart);
-      return data?.reduce((sum, s) => sum + Number(s.total_amount), 0) ?? 0;
+      return await firebaseSales.getSalesTotalAmount(new Date(monthStart));
     },
   });
 
   const { data: todayCount } = useQuery({
     queryKey: ["today-sales-count", today],
     queryFn: async () => {
-      const { count } = await supabase
-        .from("sales")
-        .select("*", { count: "exact", head: true })
-        .gte("created_at", today);
-      return count ?? 0;
+      const todayDate = new Date(today);
+      return await firebaseSales.getSalesCount(todayDate);
     },
   });
 
   const { data: lowStock } = useQuery({
     queryKey: ["low-stock"],
     queryFn: async () => {
-      const { data } = await supabase
-        .from("products")
-        .select("*")
-        .lte("stock_quantity", 5)
-        .order("stock_quantity", { ascending: true });
-      return data ?? [];
+      return await firebaseProducts.getLowStockProducts(5);
     },
   });
 
@@ -94,7 +80,7 @@ export default function Dashboard() {
                     <p className="text-sm text-muted-foreground">{p.category}</p>
                   </div>
                   <span className="rounded-full bg-destructive/10 px-3 py-1 text-sm font-semibold text-destructive">
-                    {p.stock_quantity} un.
+                    {p.stockQuantity} un.
                   </span>
                 </div>
               ))}
