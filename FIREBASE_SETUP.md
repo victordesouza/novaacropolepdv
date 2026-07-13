@@ -28,6 +28,16 @@ service cloud.firestore {
     match /users/{document=**} {
       allow read, create, update, delete: if true;
     }
+
+    // Audit logs: Anyone can read and write
+    match /auditLogs/{document=**} {
+      allow read, create, update, delete: if true;
+    }
+
+    // Coupons: Anyone can read and write
+    match /coupons/{document=**} {
+      allow read, create, update, delete: if true;
+    }
   }
 }
 ```
@@ -56,3 +66,5 @@ service firebase.storage {
 6. Vá em Build → Storage → Rules
 7. Copie e cole as Storage Rules acima
 8. Clique "Publish"
+
+Se você usa Firebase CLI, também pode publicar direto do repositório com `firebase deploy --only firestore:rules` depois de apontar o projeto para `firestore.rules`.

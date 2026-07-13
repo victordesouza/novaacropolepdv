@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import * as firebaseProducts from "@/integrations/firebase/queries/products";
 import * as firebaseStorageQueries from "@/integrations/firebase/queries/storage";
 import * as firebaseImageSearch from "@/integrations/firebase/queries/imageSearch";
+import { auditLogs } from "@/integrations/firebase";
 import AppLayout from "@/components/AppLayout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -14,20 +15,37 @@ import { Switch } from "@/components/ui/switch";
 import { Plus, Camera, ArrowUpDown, Image as ImageIcon, Pencil, Trash2, X, Search, Filter, ChevronLeft, ChevronRight, Wand2, Loader2, BookOpen } from "lucide-react";
 import { toast } from "sonner";
 import { formatBRL, maskBRL, parseBRL } from "@/lib/currency";
+import { useAuth } from "@/hooks/useAuth";
+import { getStoredCurrentUser } from "@/lib/auth";
 
-const CATEGORIES = ["Livraria", "Vestuário", "Velas", "Papelaria", "Brindes", "Outros"];
+const CATEGORIES = ["Livraria", "Cantina", "Loja"];
+const PRODUCT_TAGS = [
+  "Nível 1",
+  "Estudos Avançados",
+  "Infanto-Juvenil",
+  "Estoicismo",
+  "Platonismo",
+  "Filosofia Oriental",
+  "Sabedoria Egípcia",
+  "Filosofia Clássica",
+  "Ética",
+  "Sociopolítica",
+  "Mitologia e Simbolismo",
+  "Arte e Estética",
+  "Psicologia Filosófica",
+];
 
 type SortKey = "name" | "price" | "stockQuantity" | "category";
 type SortDir = "asc" | "desc";
 
 interface ProductForm {
   name: string; barcode: string; description: string; category: string;
-  price: string; cost_price: string; stock_quantity: string; is_book: boolean; author: string;
+  price: string; stock_quantity: string; stock_minimum: string; is_book: boolean; author: string; tags: string[];
 }
 
 const emptyForm: ProductForm = {
   name: "", barcode: "", description: "", category: "Livraria",
-  price: "", cost_price: "", stock_quantity: "", is_book: false, author: "",
+  price: "", stock_quantity: "", stock_minimum: "1", is_book: false, author: "", tags: [],
 };
 
 // Interface para as sugestões da API do Google Books
@@ -39,6 +57,9 @@ interface ApiBookSuggestion {
 
 export default function Products() {
   const queryClient = useQueryClient();
+  const { currentUser } = useAuth();
+  const actor = currentUser ?? getStoredCurrentUser();
+  const canManageProducts = currentUser?.role === "Administrador";
   const [open, setOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [deleteId, setDeleteId] = useState<string | null>(null);
@@ -91,8 +112,8 @@ export default function Products() {
 
     const matchesBookFilter =
       bookFilter === "all" ||
-      (bookFilter === "books" && product.is_book) ||
-      (bookFilter === "non-books" && !product.is_book);
+      (bookFilter === "books" && product.isBook) ||
+      (bookFilter === "non-books" && !product.isBook);
 
     return matchesSearch && matchesCategory && matchesBookFilter;
   });
@@ -127,7 +148,7 @@ export default function Products() {
       Html5QrcodeSupportedFormats.UPC_E,
     ];
 
-    const scanner = new Html5Qrcode("product-barcode-scanner", { formatsToSupport });
+    const scanner = new Html5Qrcode("product-barcode-scanner", { verbose: false, formatsToSupport });
     scannerRef.current = scanner;
     
     try {
@@ -266,10 +287,11 @@ export default function Products() {
         description: form.description || null,
         category: form.category,
         price: parseBRL(form.price),
-        costPrice: parseBRL(form.cost_price),
         stockQuantity: parseInt(form.stock_quantity) || 0,
+        stockAlertMinimum: Math.max(1, parseInt(form.stock_minimum) || 1),
         isBook: form.is_book,
         author: form.author || null,
+        tags: form.tags,
       };
       if (imageUrl) payload.imageUrl = imageUrl;
 
@@ -278,6 +300,25 @@ export default function Products() {
       } else {
         if (!imageUrl) payload.imageUrl = null;
         await firebaseProducts.createProduct(payload);
+      }
+
+      if (actor) {
+        await auditLogs.recordAuditLog({
+          actorUserId: actor.id,
+          actorUsername: actor.username,
+          actorRole: actor.role,
+          subjectUserId: actor.id,
+          subjectUsername: actor.username,
+          area: "Produtos",
+          action: editingId ? "update" : "create",
+          data: {
+            productId: editingId ?? null,
+            name: payload.name,
+            category: payload.category,
+            price: payload.price,
+            stockQuantity: payload.stockQuantity,
+          },
+        }).catch((error) => console.error("Erro ao gravar log de produto:", error));
       }
     },
     onSuccess: () => {
@@ -310,7 +351,25 @@ export default function Products() {
 
   const deleteMutation = useMutation({
     mutationFn: async (id: string) => {
+      const product = allProducts?.find((item) => item.id === id);
       await firebaseProducts.deleteProduct(id);
+
+      if (actor && product) {
+        await auditLogs.recordAuditLog({
+          actorUserId: actor.id,
+          actorUsername: actor.username,
+          actorRole: actor.role,
+          subjectUserId: actor.id,
+          subjectUsername: actor.username,
+          area: "Produtos",
+          action: "delete",
+          data: {
+            productId: product.id,
+            name: product.name,
+            category: product.category,
+          },
+        }).catch((error) => console.error("Erro ao gravar log de produto:", error));
+      }
     },
     onSuccess: () => {
       toast.success("Produto excluído!");
@@ -328,10 +387,11 @@ export default function Products() {
       description: product.description || "",
       category: product.category,
       price: formatBRL(Number(product.price)),
-      cost_price: formatBRL(Number(product.costPrice)),
       stock_quantity: String(product.stockQuantity),
+      stock_minimum: String(product.stockAlertMinimum ?? 1),
       is_book: product.isBook,
       author: product.author || "",
+      tags: product.tags || [],
     });
     setImagePreview(product.imageUrl || null);
     setImageFile(null);
@@ -446,13 +506,14 @@ export default function Products() {
     <AppLayout>
       <div className="mb-6 flex items-center justify-between">
         <h1 className="text-2xl font-bold text-foreground">Produtos</h1>
-        <Dialog open={open} onOpenChange={(v) => { if (!v) closeDialog(); else setOpen(true); }}>
-          <DialogTrigger asChild>
-            <Button><Plus className="mr-2 h-4 w-4" />Novo Produto</Button>
-          </DialogTrigger>
-          <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
-            <DialogHeader><DialogTitle>{editingId ? "Editar Produto" : "Cadastrar Produto"}</DialogTitle></DialogHeader>
-            <form onSubmit={(e) => { e.preventDefault(); handleSaveProduct(); }} className="space-y-4">
+        {canManageProducts && (
+          <Dialog open={open} onOpenChange={(v) => { if (!v) closeDialog(); else setOpen(true); }}>
+            <DialogTrigger asChild>
+              <Button><Plus className="mr-2 h-4 w-4" />Novo Produto</Button>
+            </DialogTrigger>
+            <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
+              <DialogHeader><DialogTitle>{editingId ? "Editar Produto" : "Cadastrar Produto"}</DialogTitle></DialogHeader>
+              <form onSubmit={(e) => { e.preventDefault(); handleSaveProduct(); }} className="space-y-4">
               
               <div className="flex items-center gap-3 bg-muted/50 p-3 rounded-lg border border-border/50">
                 <Switch checked={form.is_book} onCheckedChange={(v) => setForm({ ...form, is_book: v })} />
@@ -556,12 +617,47 @@ export default function Products() {
                   <Input value={form.price} onChange={(e) => setForm({ ...form, price: maskBRL(e.target.value) })} placeholder="0,00" inputMode="numeric" />
                 </div>
                 <div>
-                  <Label>Custo (R$)</Label>
-                  <Input value={form.cost_price} onChange={(e) => setForm({ ...form, cost_price: maskBRL(e.target.value) })} placeholder="0,00" inputMode="numeric" />
+                  <Label>Estoque Mínimo *</Label>
+                  <Input
+                    type="number"
+                    min="1"
+                    value={form.stock_minimum}
+                    onChange={(e) => setForm({ ...form, stock_minimum: e.target.value })}
+                    placeholder="1"
+                    required
+                  />
                 </div>
               </div>
 
-              <div><Label>Quantidade em Estoque</Label><Input type="number" value={form.stock_quantity} onChange={(e) => setForm({ ...form, stock_quantity: e.target.value })} /></div>
+              <div>
+                <Label>Quantidade em Estoque</Label>
+                <Input type="number" value={form.stock_quantity} onChange={(e) => setForm({ ...form, stock_quantity: e.target.value })} />
+                <p className="mt-1 text-xs text-muted-foreground">Pode ser negativo, se necessário.</p>
+              </div>
+
+              <div>
+                <Label>Tags</Label>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {PRODUCT_TAGS.map((tag) => {
+                    const selected = form.tags.includes(tag);
+                    return (
+                      <button
+                        key={tag}
+                        type="button"
+                        onClick={() => setForm({
+                          ...form,
+                          tags: selected ? form.tags.filter((current) => current !== tag) : [...form.tags, tag],
+                        })}
+                        className={selected
+                          ? "rounded-full border border-primary bg-primary px-3 py-1 text-xs font-medium text-primary-foreground"
+                          : "rounded-full border px-3 py-1 text-xs font-medium text-muted-foreground hover:bg-muted"}
+                      >
+                        {tag}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
 
               <div>
                 <Label>Imagem do Produto</Label>
@@ -604,12 +700,13 @@ export default function Products() {
                 )}
               </div>
 
-              <Button type="submit" className="w-full" disabled={saveMutation.isPending}>
-                {saveMutation.isPending ? "Salvando..." : editingId ? "Salvar Alterações" : "Cadastrar"}
-              </Button>
-            </form>
-          </DialogContent>
-        </Dialog>
+                <Button type="submit" className="w-full" disabled={saveMutation.isPending}>
+                  {saveMutation.isPending ? "Salvando..." : editingId ? "Salvar Alterações" : "Cadastrar"}
+                </Button>
+              </form>
+            </DialogContent>
+          </Dialog>
+        )}
       </div>
 
       <AlertDialog open={!!deleteId} onOpenChange={(v) => { if (!v) setDeleteId(null); }}>
@@ -730,8 +827,8 @@ export default function Products() {
                   <th className="px-4 py-3 text-left"><SortButton label="Nome" field="name" /></th>
                   <th className="hidden px-4 py-3 text-left md:table-cell"><SortButton label="Categoria" field="category" /></th>
                   <th className="px-4 py-3 text-right"><SortButton label="Preço" field="price" /></th>
-                  <th className="px-4 py-3 text-right"><SortButton label="Estoque" field="stock_quantity" /></th>
-                  <th className="px-4 py-3 text-right">Ações</th>
+                  <th className="px-4 py-3 text-right"><SortButton label="Estoque" field="stockQuantity" /></th>
+                  {canManageProducts && <th className="px-4 py-3 text-right">Ações</th>}
                 </tr>
               </thead>
               <tbody>
@@ -748,27 +845,37 @@ export default function Products() {
                         <span>{p.name}</span>
                         {p.isBook && <span className="ml-2 rounded bg-primary/10 px-1.5 py-0.5 text-xs text-primary">Livro</span>}
                         {p.author && <p className="text-xs text-muted-foreground">{p.author}</p>}
+                        {p.tags && p.tags.length > 0 && (
+                          <p className="mt-1 flex flex-wrap gap-1 text-xs text-muted-foreground">
+                            {p.tags.map((tag) => (
+                              <span key={tag} className="rounded-full bg-muted px-2 py-0.5">{tag}</span>
+                            ))}
+                          </p>
+                        )}
                       </div>
                     </div>
                   </td>
                   <td className="hidden px-4 py-3 text-muted-foreground md:table-cell">{p.category}</td>
                   <td className="px-4 py-3 text-right">R$ {formatBRL(Number(p.price))}</td>
                   <td className="px-4 py-3 text-right">
-                    <span className={p.stockQuantity <= 5 ? "font-semibold text-destructive" : ""}>{p.stockQuantity}</span>
+                    <span className={p.stockQuantity <= (p.stockAlertMinimum ?? 1) ? "font-semibold text-destructive" : ""}>{p.stockQuantity}</span>
+                    <p className="text-xs text-muted-foreground">Mín. {p.stockAlertMinimum ?? 1}</p>
                   </td>
-                  <td className="px-4 py-3 text-right">
-                    <div className="flex justify-end gap-1">
-                      <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => openEdit(p)}><Pencil className="h-4 w-4" /></Button>
-                      <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setDeleteId(p.id)}><Trash2 className="h-4 w-4 text-destructive" /></Button>
-                    </div>
-                  </td>
+                  {canManageProducts && (
+                    <td className="px-4 py-3 text-right">
+                      <div className="flex justify-end gap-1">
+                        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => openEdit(p)}><Pencil className="h-4 w-4" /></Button>
+                        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setDeleteId(p.id)}><Trash2 className="h-4 w-4 text-destructive" /></Button>
+                      </div>
+                    </td>
+                  )}
                 </tr>
               ))}
               {paginatedProducts.length === 0 && totalProducts === 0 && (
-                <tr><td colSpan={5} className="px-4 py-8 text-center text-muted-foreground">Nenhum produto encontrado.</td></tr>
+                <tr><td colSpan={canManageProducts ? 5 : 4} className="px-4 py-8 text-center text-muted-foreground">Nenhum produto encontrado.</td></tr>
               )}
               {paginatedProducts.length === 0 && totalProducts > 0 && (
-                <tr><td colSpan={5} className="px-4 py-8 text-center text-muted-foreground">Nenhum produto encontrado com os filtros aplicados.</td></tr>
+                <tr><td colSpan={canManageProducts ? 5 : 4} className="px-4 py-8 text-center text-muted-foreground">Nenhum produto encontrado com os filtros aplicados.</td></tr>
               )}
             </tbody>
           </table>

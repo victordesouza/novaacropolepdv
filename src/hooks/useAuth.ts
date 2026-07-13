@@ -1,7 +1,10 @@
 import { useState, useEffect, useCallback } from 'react';
+import { getStoredCurrentUser, normalizeRole } from '@/lib/auth';
 
 export type CurrentUser = {
+  id: string;
   username: string;
+  role: 'Administrador' | 'Recepção';
   loginTime: string;
 } | null;
 
@@ -10,7 +13,7 @@ const SESSION_TIMEOUT_HOURS = 8;
 const SESSION_TIMEOUT_MS = SESSION_TIMEOUT_HOURS * 60 * 60 * 1000;
 
 export function useAuth() {
-  const [currentUser, setCurrentUser] = useState<CurrentUser>(null);
+  const [currentUser, setCurrentUser] = useState<CurrentUser>(getStoredCurrentUser());
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
 
   const logout = useCallback(() => {
@@ -50,9 +53,12 @@ export function useAuth() {
 
       // Carregar usuário atual
       try {
-        const userData = localStorage.getItem("na-current-user");
+        const userData = getStoredCurrentUser();
         if (userData) {
-          setCurrentUser(JSON.parse(userData));
+          setCurrentUser({
+            ...userData,
+            role: normalizeRole(userData.role),
+          });
           setIsAuthenticated(true);
         }
       } catch (error) {
@@ -81,7 +87,7 @@ export function useAuth() {
 
   const getUserRole = () => {
     if (!currentUser) return null;
-    return currentUser.username === "admin" ? "Administrador" : "Operador";
+    return currentUser.role;
   };
 
   const getLoginDuration = () => {

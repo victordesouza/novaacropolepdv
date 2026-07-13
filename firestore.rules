@@ -1,0 +1,29 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /products/{document=**} {
+      allow read, create, update, delete: if true;
+    }
+
+    match /sales/{document=**} {
+      allow read, create, update, delete: if true;
+    }
+
+    match /sales/{saleId}/items/{document=**} {
+      allow read, create, update, delete: if true;
+    }
+
+    match /users/{document=**} {
+      allow read, create, update, delete: if true;
+    }
+
+    match /auditLogs/{document=**} {
+      allow read, create, update, delete: if true;
+    }
+
+    match /coupons/{document=**} {
+      allow read, create, update, delete: if true;
+    }
+  }
+}

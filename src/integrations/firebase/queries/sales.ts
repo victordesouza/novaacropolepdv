@@ -16,6 +16,10 @@ import { db } from '../client';
 import { Sale, SaleItem, saleConverter } from '../types';
 import { getProductById } from './products';
 
+function toSale(id: string, data: Omit<Sale, 'id'>): Sale {
+  return { id, ...data } as Sale;
+}
+
 export async function createSaleWithItems(
   sale: Omit<Sale, 'id' | 'createdAt'>,
   items: Array<Omit<SaleItem, 'id' | 'createdAt'> & { productId: string; quantity: number; unitPrice: number }>,
@@ -78,7 +82,7 @@ export async function getSales(
 
   const q = query(collection(db, 'sales'), ...constraints);
   const snapshot = await getDocs(q.withConverter(saleConverter));
-  return snapshot.docs.map(doc => doc.data()).slice(0, limit);
+  return snapshot.docs.map(doc => toSale(doc.id, doc.data() as Omit<Sale, 'id'>)).slice(0, limit);
 }
 
 export async function getSalesCount(startDate?: Date, endDate?: Date): Promise<number> {
@@ -132,7 +136,8 @@ export async function getSaleWithItems(saleId: string): Promise<(Sale & { items:
   }
 
   return {
-    ...saleSnap.data(),
+    id: saleSnap.id,
+    ...(saleSnap.data() as Omit<Sale, 'id'>),
     items,
   };
 }
@@ -157,6 +162,7 @@ export async function getAllSalesWithItems(): Promise<Array<Sale & { items: Sale
     }
 
     results.push({
+      id: sale.id,
       ...sale,
       items,
     });

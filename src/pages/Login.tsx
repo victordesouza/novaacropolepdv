@@ -7,6 +7,7 @@ import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { toast } from "sonner";
 import { users as firebaseUsers } from "@/integrations/firebase";
 import logo from "@/assets/logo-nova-acropole.png";
+import { getInitialRouteForRole, normalizeRole } from "@/lib/auth";
 
 export default function Login() {
   const navigate = useNavigate();
@@ -28,12 +29,13 @@ export default function Login() {
 
       localStorage.setItem("na-auth", "true");
       localStorage.setItem("na-current-user", JSON.stringify({
+        id: loggedInUser.id,
         username: loggedInUser.username,
-        role: loggedInUser.role || "Operador",
+        role: normalizeRole(loggedInUser.role),
         loginTime: new Date().toISOString()
       }));
       toast.success(`Bem-vindo, ${loggedInUser.username}!`);
-      navigate("/");
+      navigate(getInitialRouteForRole(loggedInUser.role), { replace: true });
     } catch (e: any) {
       toast.error("Erro ao fazer login: " + e.message);
     } finally {

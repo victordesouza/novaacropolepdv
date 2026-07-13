@@ -1,22 +1,45 @@
 import { Link, useLocation, useNavigate } from "react-router-dom";
-import { LayoutDashboard, Package, ShoppingCart, BarChart3, LogOut, Users, User } from "lucide-react";
+import { useEffect } from "react";
+import { LayoutDashboard, Package, ShoppingCart, BarChart3, LogOut, Users, User, FileText } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/hooks/useAuth";
 import SessionExpiry from "@/components/SessionExpiry";
 import logo from "@/assets/logo-nova-acropole.png";
+import { getAreaFromPath } from "@/lib/audit";
+import { auditLogs } from "@/integrations/firebase";
+import { getStoredCurrentUser } from "@/lib/auth";
 
 const navItems = [
-  { to: "/", label: "Dashboard", icon: LayoutDashboard },
+  { to: "/", label: "Dashboard", icon: LayoutDashboard, adminOnly: true },
   { to: "/products", label: "Produtos", icon: Package },
   { to: "/pos", label: "PDV", icon: ShoppingCart },
-  { to: "/reports", label: "Relatórios", icon: BarChart3 },
-  { to: "/users", label: "Usuários", icon: Users },
+  { to: "/coupons", label: "Cupons", icon: FileText, adminOnly: true },
+  { to: "/reports", label: "Relatórios", icon: BarChart3, adminOnly: true },
+  { to: "/users", label: "Usuários", icon: Users, adminOnly: true },
 ];
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const location = useLocation();
   const navigate = useNavigate();
   const { currentUser, getUserRole, getLoginDuration, logout: authLogout } = useAuth();
+  const actor = currentUser ?? getStoredCurrentUser();
+
+  useEffect(() => {
+    if (!actor?.id || !actor?.username) return;
+
+    void auditLogs.recordAuditLog({
+      actorUserId: actor.id,
+      actorUsername: actor.username,
+      actorRole: actor.role,
+      subjectUserId: actor.id,
+      subjectUsername: actor.username,
+      area: getAreaFromPath(location.pathname),
+      action: "access",
+      data: { pathname: location.pathname },
+    }).catch((error) => console.error("Erro ao gravar log de acesso:", error));
+  }, [actor?.id, actor?.role, actor?.username, location.pathname]);
+
+  const visibleNavItems = navItems.filter((item) => !item.adminOnly || getUserRole() === "Administrador");
 
   const logout = () => {
     authLogout();
@@ -31,7 +54,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           <span className="text-sm font-bold text-sidebar-primary-foreground leading-tight">Nova Acrópole</span>
         </div>
         <nav className="mt-4 flex-1 space-y-1 px-3">
-          {navItems.map((item) => (
+          {visibleNavItems.map((item) => (
             <Link
               key={item.to}
               to={item.to}
@@ -105,7 +128,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       </header>
 
       <nav className="fixed bottom-0 left-0 right-0 z-40 flex border-t bg-card md:hidden">
-        {navItems.map((item) => (
+        {visibleNavItems.map((item) => (
           <Link
             key={item.to}
             to={item.to}

@@ -16,6 +16,15 @@ import {
 import { db } from '../client';
 import { Product, productConverter } from '../types';
 
+function toProduct(id: string, data: Omit<Product, 'id'>): Product {
+  return {
+    id,
+    stockAlertMinimum: 1,
+    tags: [],
+    ...data,
+  } as Product;
+}
+
 export async function getProducts(filters?: {
   category?: string;
   isBook?: boolean;
@@ -31,7 +40,7 @@ export async function getProducts(filters?: {
 
   const q = query(collection(db, 'products'), ...constraints);
   const snapshot = await getDocs(q.withConverter(productConverter));
-  return snapshot.docs.map(doc => doc.data());
+  return snapshot.docs.map(doc => toProduct(doc.id, doc.data() as Omit<Product, 'id'>));
 }
 
 export async function searchProducts(searchTerm: string): Promise<Product[]> {
@@ -52,23 +61,21 @@ export async function getProductByBarcode(barcode: string): Promise<Product | nu
   const snapshot = await getDocs(
     query(collection(db, 'products'), where('barcode', '==', barcode)).withConverter(productConverter)
   );
-  return snapshot.empty ? null : snapshot.docs[0].data();
+  return snapshot.empty ? null : toProduct(snapshot.docs[0].id, snapshot.docs[0].data() as Omit<Product, 'id'>);
 }
 
 export async function getProductById(id: string): Promise<Product | null> {
   const docRef = doc(db, 'products', id).withConverter(productConverter);
   const docSnap = await getDoc(docRef);
-  return docSnap.exists() ? docSnap.data() : null;
+  return docSnap.exists() ? toProduct(docSnap.id, docSnap.data() as Omit<Product, 'id'>) : null;
 }
 
 export async function getLowStockProducts(threshold: number = 5): Promise<Product[]> {
-  const q = query(
-    collection(db, 'products'),
-    where('stockQuantity', '<=', threshold),
-    orderBy('stockQuantity')
-  );
-  const snapshot = await getDocs(q.withConverter(productConverter));
-  return snapshot.docs.map(doc => doc.data());
+  const snapshot = await getDocs(query(collection(db, 'products')).withConverter(productConverter));
+  return snapshot.docs
+    .map(doc => toProduct(doc.id, doc.data() as Omit<Product, 'id'>))
+    .filter((product) => product.stockQuantity <= (product.stockAlertMinimum ?? threshold))
+    .sort((left, right) => left.stockQuantity - right.stockQuantity);
 }
 
 export async function createProduct(product: Omit<Product, 'id' | 'createdAt' | 'updatedAt'>): Promise<DocumentReference> {
