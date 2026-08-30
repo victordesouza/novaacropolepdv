@@ -17,9 +17,9 @@ import { formatBRL } from "@/lib/currency";
 import type { Coupon, Product } from "@/integrations/firebase/types";
 import { useAuth } from "@/hooks/useAuth";
 import { getStoredCurrentUser } from "@/lib/auth";
+import { buildSalePayload, getDiscountAmount, type DiscountMode } from "@/lib/checkout";
 
 type CartItem = { product: Product; quantity: number; couponId: string | null };
-type DiscountMode = "none" | "percent" | "currency";
 
 function getCouponDiscountAmount(coupon: Coupon | undefined, amount: number) {
   if (!coupon) return 0;
@@ -86,10 +86,15 @@ export default function POS() {
     setCart((prev) => {
       const existing = prev.find((i) => i.product.id === product.id);
       if (existing) {
-        if (existing.quantity >= product.stockQuantity) { toast.error("Estoque insuficiente!"); return prev; }
+        if (existing.quantity >= product.stockQuantity && product.stockQuantity > 0) {
+          toast.error("Estoque insuficiente!");
+          return prev;
+        }
         return prev.map((i) => i.product.id === product.id ? { ...i, quantity: i.quantity + 1 } : i);
       }
-      if (product.stockQuantity <= 0) { toast.error("Produto sem estoque!"); return prev; }
+      if (product.stockQuantity < 0 && product.stockQuantity === 0) {
+        // no-op: products may be registered with zero stock and still be sold.
+      }
       return [...prev, { product, quantity: 1, couponId: null }];
     });
     setSearch("");
@@ -101,7 +106,10 @@ export default function POS() {
       if (i.product.id !== productId) return i;
       const newQty = i.quantity + delta;
       if (newQty <= 0) return i;
-      if (newQty > i.product.stockQuantity) { toast.error("Estoque insuficiente!"); return i; }
+      if (i.product.stockQuantity > 0 && newQty > i.product.stockQuantity) {
+        toast.error("Estoque insuficiente!");
+        return i;
+      }
       return { ...i, quantity: newQty };
     }));
   };
@@ -114,12 +122,12 @@ export default function POS() {
   const getItemTotal = (item: CartItem) => Math.max(0, getItemSubtotal(item) - getItemDiscount(item));
   const subtotalAfterCoupons = cart.reduce((sum, item) => sum + getItemTotal(item), 0);
   const normalizedSaleDiscountValue = Math.max(0, Number(saleDiscountValue) || 0);
-  const saleDiscountAmount = saleDiscountMode === "percent"
-    ? (subtotalAfterCoupons * normalizedSaleDiscountValue) / 100
-    : saleDiscountMode === "currency"
-      ? normalizedSaleDiscountValue
-      : 0;
-  const total = Math.max(0, subtotalAfterCoupons - Math.min(subtotalAfterCoupons, saleDiscountAmount));
+  const saleDiscountAmount = getDiscountAmount({
+    mode: saleDiscountMode,
+    subtotal: subtotalAfterCoupons,
+    value: normalizedSaleDiscountValue,
+  });
+  const total = Math.max(0, subtotalAfterCoupons - saleDiscountAmount);
 
   const finalizeMutation = useMutation({
     mutationFn: async () => {
@@ -146,16 +154,24 @@ export default function POS() {
         newQuantity: i.product.stockQuantity - i.quantity,
       }));
 
+      if (cart.length === 0) {
+        throw new Error("Adicione pelo menos um produto antes de finalizar.");
+      }
+
+      const salePayload = buildSalePayload({
+        paymentMethod,
+        customerName: customerName || null,
+        sellerUserId: finalSellerId,
+        sellerUsername: finalSeller?.username || currentUser?.username,
+        discountType: saleDiscountMode === "none" ? undefined : saleDiscountMode,
+        discountValue: normalizedSaleDiscountValue,
+        discountAmount: saleDiscountAmount,
+      });
+
       await firebaseSales.createSaleWithItems(
         {
+          ...salePayload,
           totalAmount: total,
-          paymentMethod: paymentMethod,
-          customerName: customerName || null,
-          sellerUserId: finalSellerId,
-          sellerUsername: finalSeller?.username || currentUser?.username,
-          discountType: saleDiscountMode === "none" ? undefined : saleDiscountMode,
-          discountValue: normalizedSaleDiscountValue,
-          discountAmount: saleDiscountAmount,
         },
         items,
         stockUpdates

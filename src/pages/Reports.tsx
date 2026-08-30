@@ -138,7 +138,7 @@ export default function Reports() {
     Tags: (product.tags || []).join(", "),
     "Estoque Mínimo": product.stockAlertMinimum ?? 1,
     Estoque: product.stockQuantity,
-    "Estoque Baixo": product.stockQuantity <= (product.stockAlertMinimum ?? 1) ? "Sim" : "Não",
+    "Estoque Baixo": product.stockQuantity < (product.stockAlertMinimum ?? 1) ? "Sim" : "Não",
     Preço: formatBRL(Number(product.price)),
     Autor: product.author || "",
     Descrição: product.description || "",
@@ -243,7 +243,7 @@ export default function Reports() {
                     <td className="hidden px-4 py-3 text-muted-foreground lg:table-cell">{(product.tags || []).join(", ") || "—"}</td>
                     <td className="px-4 py-3 text-right">{product.stockAlertMinimum ?? 1}</td>
                     <td className="px-4 py-3 text-right">
-                      <span className={product.stockQuantity <= (product.stockAlertMinimum ?? 1) ? "font-semibold text-destructive" : ""}>{product.stockQuantity}</span>
+                      <span className={product.stockQuantity < (product.stockAlertMinimum ?? 1) ? "font-semibold text-destructive" : ""}>{product.stockQuantity}</span>
                     </td>
                     <td className="px-4 py-3 text-right">R$ {formatBRL(Number(product.price))}</td>
                   </tr>

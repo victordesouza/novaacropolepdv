@@ -74,7 +74,7 @@ export async function getLowStockProducts(threshold: number = 5): Promise<Produc
   const snapshot = await getDocs(query(collection(db, 'products')).withConverter(productConverter));
   return snapshot.docs
     .map(doc => toProduct(doc.id, doc.data() as Omit<Product, 'id'>))
-    .filter((product) => product.stockQuantity <= (product.stockAlertMinimum ?? threshold))
+    .filter((product) => product.stockQuantity < (product.stockAlertMinimum ?? threshold))
     .sort((left, right) => left.stockQuantity - right.stockQuantity);
 }
 

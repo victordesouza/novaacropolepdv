@@ -6,7 +6,6 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { toast } from "sonner";
 import { users as firebaseUsers } from "@/integrations/firebase";
-import logo from "@/assets/logo-nova-acropole.png";
 import { getInitialRouteForRole, normalizeRole } from "@/lib/auth";
 
 export default function Login() {
@@ -46,8 +45,10 @@ export default function Login() {
   return (
     <div className="flex min-h-screen items-center justify-center bg-background p-4">
       <Card className="w-full max-w-sm">
-        <CardHeader className="items-center pb-2">
-          <img src={logo} alt="Nova Acrópole" className="mb-2 h-24 w-auto" />
+        <CardHeader className="items-center pb-2 text-center">
+          <div className="mb-2 flex h-12 w-full items-center justify-center rounded-md border bg-muted/40 text-base font-semibold tracking-wide text-muted-foreground">
+            Acesso ao Sistema
+          </div>
           <p className="text-sm text-muted-foreground">Gestão de Estoque & PDV</p>
         </CardHeader>
         <CardContent>

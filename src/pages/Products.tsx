@@ -288,7 +288,7 @@ export default function Products() {
         category: form.category,
         price: parseBRL(form.price),
         stockQuantity: parseInt(form.stock_quantity) || 0,
-        stockAlertMinimum: Math.max(1, parseInt(form.stock_minimum) || 1),
+        stockAlertMinimum: Math.max(0, parseInt(form.stock_minimum) || 0),
         isBook: form.is_book,
         author: form.author || null,
         tags: form.tags,
@@ -341,12 +341,12 @@ export default function Products() {
     // 2. Validação do Estoque
     const stockQty = parseInt(form.stock_quantity) || 0;
 
-    // Se estoque é 0 e não está editando, mostrar warning
     if (stockQty === 0 && !editingId) {
       setShowStockWarning(true);
-    } else {
-      saveMutation.mutate();
+      return;
     }
+
+    saveMutation.mutate();
   };
 
   const deleteMutation = useMutation({
@@ -620,10 +620,10 @@ export default function Products() {
                   <Label>Estoque Mínimo *</Label>
                   <Input
                     type="number"
-                    min="1"
+                    min="0"
                     value={form.stock_minimum}
                     onChange={(e) => setForm({ ...form, stock_minimum: e.target.value })}
-                    placeholder="1"
+                    placeholder="0"
                     required
                   />
                 </div>
@@ -725,9 +725,9 @@ export default function Products() {
       <AlertDialog open={showStockWarning} onOpenChange={setShowStockWarning}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>⚠️ Produto sem estoque</AlertDialogTitle>
+            <AlertDialogTitle>⚠️ Estoque zerado</AlertDialogTitle>
             <AlertDialogDescription>
-              Você está cadastrando um produto com estoque zerado. Produtos sem estoque não podem ser vendidos no PDV. Tem certeza que deseja continuar?
+              Este cadastro foi feito com estoque zerado. O sistema permite a venda mesmo com saldo zerado e registrará o ajuste negativo, conforme a regra de operação do ponto de venda.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -736,7 +736,7 @@ export default function Products() {
               setShowStockWarning(false);
               saveMutation.mutate();
             }}>
-              Cadastrar mesmo assim
+              Confirmar cadastro
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -858,7 +858,7 @@ export default function Products() {
                   <td className="hidden px-4 py-3 text-muted-foreground md:table-cell">{p.category}</td>
                   <td className="px-4 py-3 text-right">R$ {formatBRL(Number(p.price))}</td>
                   <td className="px-4 py-3 text-right">
-                    <span className={p.stockQuantity <= (p.stockAlertMinimum ?? 1) ? "font-semibold text-destructive" : ""}>{p.stockQuantity}</span>
+                    <span className={p.stockQuantity < (p.stockAlertMinimum ?? 1) ? "font-semibold text-destructive" : ""}>{p.stockQuantity}</span>
                     <p className="text-xs text-muted-foreground">Mín. {p.stockAlertMinimum ?? 1}</p>
                   </td>
                   {canManageProducts && (
